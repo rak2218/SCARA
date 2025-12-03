@@ -1,152 +1,117 @@
-function dyn = planar2R_symbolic_dynamics()
-%PLANAR2R_SYMBOLIC_DYNAMICS Symbolic dynamics of a planar 2R robot.
-%
-%   dyn = PLANAR2R_SYMBOLIC_DYNAMICS() returns a struct with:
-%
-%     dyn.q      - [teta1; teta2]           joint positions
-%     dyn.qd     - [tetad1; tetad2]         joint velocities
-%     dyn.qdd    - [tetadd1; tetadd2]       joint accelerations
-%
-%     dyn.M      - 2x2 inertia matrix  M(q)
-%     dyn.V      - 2x1 Coriolis/centrifugal vector V(q, qd)
-%     dyn.G      - 2x1 gravity vector  G(q)
-%     dyn.T      - 2x1 joint torques   T(q, qd, qdd)
-%
-%     dyn.EE     - 3x1 end-effector position in base frame
-%
-%     dyn.params - struct containing symbolic model parameters:
-%                  m1, m2, g, P1, P2, P3, Pc1, Pc2, Ic1, Ic2
-%
-%   Use SUBS to plug in numeric parameters and states, or MATLABFUNCTION
-%   to generate fast numeric functions from dyn.M, dyn.V, dyn.G, dyn.T.
+clc
 
-    %% Symbolic variables
-    syms teta1 teta2 tetad1 tetad2 tetadd1 tetadd2 real
-    syms m1 m2 g real
+clear
 
-    % Link position vectors (expressed in the corresponding link frames)
-    P1  = sym('P1', [3 1]);    % frame 0 -> frame 1 origin (frame 1)
-    P2  = sym('P2', [3 1]);    % frame 1 -> frame 2 origin (frame 2)
-    P3  = sym('P3', [3 1]);    % frame 2 -> frame 3 origin (frame 3)
+close all
 
-    % Center-of-mass position vectors
-    Pc1 = sym('Pc1',[3 1]);    % CoM of link 1 in frame 1
-    Pc2 = sym('Pc2',[3 1]);    % CoM of link 2 in frame 2
+%% Variables
 
-    % Inertia tensors about CoM, expressed in link frames
-    Ic1 = sym('Ic1',[3 3]);
-    Ic2 = sym('Ic2',[3 3]);
+syms teta1 teta2 real
 
-    %% Base conditions (frame 0)
-    Omega0      = sym([0;0;0]);
-    Omega_dot0  = sym([0;0;0]);
+syms tetad1 tetad2 real
 
-    % Gravity along -y (planar xy robot, joints around z)
-    Velocity_dot0 = sym([0;-g;0]);
+syms tetadd1 tetadd2 real
 
-    f3 = sym([0;0;0]);
-    n3 = sym([0;0;0]);
+%% Mechanical Spec
 
-    %% Rotation matrices (about z-axis)
-    R1 = [cos(teta1) -sin(teta1) 0;
-          sin(teta1)  cos(teta1) 0;
-          0           0          1];
+syms m1 m2 real
 
-    R2 = [cos(teta2) -sin(teta2) 0;
-          sin(teta2)  cos(teta2) 0;
-          0           0          1];
+P1=sym('P1',[3 1]);P2=sym('P2',[3 1]);P3=sym('P3',[3 1]);
 
-    R3 = eye(3);
+Pc1=sym('Pc1',[3 1]);Pc2=sym('Pc2',[3 1]);
 
-    z = [0;0;1];
+Ic1=sym('Ic1' ,[3 3]);Ic2=sym('Ic2',[3 3]);
 
-    %% Outward Newton–Euler recursion
-    Omega1     = R1.'*Omega0 + tetad1*z;
-    Omega_dot1 = R1.'*Omega_dot0 + cross(R1.'*Omega0, tetad1*z) + tetadd1*z;
-    Acc1       = R1.'*(cross(Omega_dot0, P1) + cross(Omega0, cross(Omega0, P1)) + Velocity_dot0);
-    AccC1      = cross(Omega_dot1, Pc1) + cross(Omega1, cross(Omega1, Pc1)) + Acc1;
+%% Initial Condition
 
-    F1 = m1*AccC1;
-    N1 = Ic1*Omega_dot1 + cross(Omega1, Ic1*Omega1);
+Omega0=[0;0;0];Omega_dot0=[0;0;0];
 
-    Omega2     = R2.'*Omega1 + tetad2*z;
-    Omega_dot2 = R2.'*Omega_dot1 + cross(R2.'*Omega1, tetad2*z) + tetadd2*z;
-    Acc2       = R2.'*(cross(Omega_dot1, P2) + cross(Omega1, cross(Omega1, P2)) + Acc1);
-    AccC2      = cross(Omega_dot2, Pc2) + cross(Omega2, cross(Omega2, Pc2)) + Acc2;
+syms g;Velocity_dot0=[0;0;-g];
 
-    F2 = m2*AccC2;
-    N2 = Ic2*Omega_dot2 + cross(Omega2, Ic2*Omega2);
+f3=[0;0;0];n3=[0;0;0];
 
-    %% Inward recursion (joint forces/torques)
-    f2 = R3*f3 + F2;
-    n2 = N2 + R3*n3 + cross(Pc2, F2) + cross(P3, R3*f3);
-    T2 = n2.'*z;
+%% Link Rotation Matrix {frame,previous frame}
 
-    f1 = R2*f2 + F1;
-    n1 = N1 + R2*n2 + cross(Pc1, F1) + cross(P2, R2*f2);
-    T1 = n1.'*z;
+R1=[cos(teta1) -sin(teta1) 0;sin(teta1) cos(teta1) 0;0 0 1];
 
-    T = [T1; T2];
+R2=[cos(teta2) -sin(teta2) 0;sin(teta2) cos(teta2) 0;0 0 1];
 
-    %% Extract M(q), V(q, qd), G(q)
-    qdd = [tetadd1; tetadd2];
+R3=[1 0 0;0 1 0;0 0 1];
 
-    M = sym(zeros(2));
-    V = sym(zeros(2,1));
-    G = sym(zeros(2,1));
+%% Dynamic
 
-    for i = 1:2
-        for j = 1:2
-            % Inertia matrix elements
-            M(i,j) = diff(T(i), qdd(j));
-        end
+% Craig Method (Newtonian Method)
 
-        % Gravity: zero velocities and accelerations
-        G(i) = simplify( subs(T(i), [tetadd1 tetadd2 tetad1 tetad2], [0 0 0 0]) );
+% Outward iteration (Ginsberg Method)
 
-        % Coriolis + centrifugal: zero accelerations, subtract gravity
-        V(i) = simplify( subs(T(i), [tetadd1 tetadd2], [0 0]) - G(i) );
-    end
+z=[0;0;1];
 
-    M = simplify(M);     % optional, but nice for readability
+Omega1=R1'*Omega0+tetad1*z;
 
-    %% End-effector Cartesian position (same as your transform)
-    TM = [cos(teta1) -sin(teta1) 0 0;
-          sin(teta1)  cos(teta1) 0 0;
-          0           0          1 0.298;
-          0           0          0 1] ...
-         * [cos(teta2) -sin(teta2) 0 0.4;
-            sin(teta2)  cos(teta2) 0 0;
-            0           0          1 0;
-            0           0          0 1] ...
-         * [1 0 0 0.3;
-            0 1 0 0;
-            0 0 1 -0.053;
-            0 0 0 1];
+Omega_dot1=R1'*Omega_dot0+cross(R1'*Omega0,tetad1*z)+tetadd1*z;
 
-    EFFP_A = TM(1:3,4);
+Velocity_dot1=R1'*(cross(Omega_dot0,P1)+cross(Omega0,cross(Omega0,P1))+Velocity_dot0);
 
-    %% Pack into output struct
-    dyn.q   = [teta1; teta2];
-    dyn.qd  = [tetad1; tetad2];
-    dyn.qdd = [tetadd1; tetadd2];
+Velocity_Center_dot1=cross(Omega_dot1,Pc1)+cross(Omega1,cross(Omega1,Pc1))+Velocity_dot1;
 
-    dyn.M   = M;
-    dyn.V   = V;
-    dyn.G   = G;
-    dyn.T   = T;
+F1=m1*Velocity_Center_dot1;
 
-    dyn.EE  = EFFP_A;
+N1=Ic1*Omega_dot1+cross(Omega1,Ic1*Omega1);
 
-    dyn.params.m1  = m1;
-    dyn.params.m2  = m2;
-    dyn.params.g   = g;
-    dyn.params.P1  = P1;
-    dyn.params.P2  = P2;
-    dyn.params.P3  = P3;
-    dyn.params.Pc1 = Pc1;
-    dyn.params.Pc2 = Pc2;
-    dyn.params.Ic1 = Ic1;
-    dyn.params.Ic2 = Ic2;
+Omega2=R2'*Omega1+tetad2*z;
+
+Omega_dot2=R2'*Omega_dot1+cross(R2'*Omega1,tetad2*z)+tetadd2*z;
+
+Velocity_dot2=R2'*(cross(Omega_dot1,P2)+cross(Omega1,cross(Omega1,P2))+Velocity_dot1);
+
+Velocity_Center_dot2=cross(Omega_dot2,Pc2)+cross(Omega2,cross(Omega2,Pc2))+Velocity_dot2;
+
+F2=m2*Velocity_Center_dot2;
+
+N2=Ic2*Omega_dot2+cross(Omega2,Ic2*Omega2);
+
+f2=R3*f3+F2;
+
+n2=N2+R3*n3+cross(Pc2,F2)+cross(P3,R3*f3);
+
+T2=n2'*[0;0;1];
+
+f1=R2*f2+F1;
+
+n1=N1+R2*n2+cross(Pc1,F1)+cross(P2,R2*f2);
+
+T1=n1'*[0;0;1];
+
+FirstJT=T1;
+
+SecondJT=T2;
+
+T={T1 T2};
+
+M={0 0;0 0};
+
+G={0;0};
+
+V={0;0};
+
+tetadd={[0;0;tetadd1],[0;0;tetadd2]};
+
+for i=1:2
+
+for j=1:2
+
+        M{j,i}=vpa(diff(T{1,i},tetadd{1,j}(3,1)));
 
 end
+
+    G{i,1}=vpa(subs(T{1,i},[tetadd1 tetadd2 tetad1 tetad2],[0 0 0 0]));
+
+    V{i,1}=vpa(subs(T{1,i},[tetadd1 tetadd2],[0 0])-G{i,1});
+
+end
+
+%% EndEffector Cartesian Position
+
+TM=[cos(teta1) -sin(teta1) 0 0;sin(teta1) cos(teta1) 0 0;0 0 1 0.298;0 0 0 1]*[cos(teta2) -sin(teta2) 0 0.4;sin(teta2) cos(teta2) 0 0;0 0 1 0;0 0 0 1]*[1 0 0 0.3;0 1 0 0;0 0 1 -0.053;0 0 0 1];
+
+EFFP_A=[TM(1,4);TM(2,4);TM(3,4)];
