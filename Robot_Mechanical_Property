@@ -1,117 +1,144 @@
-clc
+function [M,V,G,TM,EFFP_A] = Robot_Mechanical_Property(theta,thetaDot,thetaDDot,m,P,Pc,Ic,g)
+%ROBOT_MECHANICAL_PROPERTY Extract dynamic model terms for a 2-DOF SCARA arm.
+%   [M,V,G,TM,EFFP_A] = ROBOT_MECHANICAL_PROPERTY(theta,thetaDot,thetaDDot,...
+%   m,P,Pc,Ic,g) returns the inertia matrix M, Coriolis/centrifugal vector V,
+%   gravity vector G, homogeneous transform TM from base to end-effector, and
+%   the end-effector position EFFP_A. Inputs can be numeric or symbolic.
+%
+%   Inputs
+%   ------
+%   theta     : 2x1 joint angles [rad]
+%   thetaDot  : 2x1 joint velocities [rad/s]
+%   thetaDDot : 2x1 joint accelerations [rad/s^2]
+%   m         : 2x1 link masses
+%   P         : 1x3 cell of 3x1 link vectors {P1,P2,P3}
+%   Pc        : 1x2 cell of 3x1 COM vectors {Pc1,Pc2}
+%   Ic        : 1x2 cell of 3x3 inertia tensors {Ic1,Ic2}
+%   g         : Gravity magnitude (positive scalar)
+%
+%   Outputs
+%   -------
+%   M         : 2x2 inertia matrix
+%   V         : 2x1 Coriolis/centrifugal vector
+%   G         : 2x1 gravity vector
+%   TM        : Homogeneous transform from base to end-effector
+%   EFFP_A    : 3x1 end-effector position in base frame
+%
+%   The dynamics follow a Newton-Euler formulation similar to Craig/Ginsberg
+%   outward iteration. This function is intended for symbolic parameterization
+%   of the dynamic model.
 
-clear
-
-close all
-
-%% Variables
-
-syms teta1 teta2 real
-
-syms tetad1 tetad2 real
-
-syms tetadd1 tetadd2 real
-
-%% Mechanical Spec
-
-syms m1 m2 real
-
-P1=sym('P1',[3 1]);P2=sym('P2',[3 1]);P3=sym('P3',[3 1]);
-
-Pc1=sym('Pc1',[3 1]);Pc2=sym('Pc2',[3 1]);
-
-Ic1=sym('Ic1' ,[3 3]);Ic2=sym('Ic2',[3 3]);
-
-%% Initial Condition
-
-Omega0=[0;0;0];Omega_dot0=[0;0;0];
-
-syms g;Velocity_dot0=[0;0;-g];
-
-f3=[0;0;0];n3=[0;0;0];
-
-%% Link Rotation Matrix {frame,previous frame}
-
-R1=[cos(teta1) -sin(teta1) 0;sin(teta1) cos(teta1) 0;0 0 1];
-
-R2=[cos(teta2) -sin(teta2) 0;sin(teta2) cos(teta2) 0;0 0 1];
-
-R3=[1 0 0;0 1 0;0 0 1];
-
-%% Dynamic
-
-% Craig Method (Newtonian Method)
-
-% Outward iteration (Ginsberg Method)
-
-z=[0;0;1];
-
-Omega1=R1'*Omega0+tetad1*z;
-
-Omega_dot1=R1'*Omega_dot0+cross(R1'*Omega0,tetad1*z)+tetadd1*z;
-
-Velocity_dot1=R1'*(cross(Omega_dot0,P1)+cross(Omega0,cross(Omega0,P1))+Velocity_dot0);
-
-Velocity_Center_dot1=cross(Omega_dot1,Pc1)+cross(Omega1,cross(Omega1,Pc1))+Velocity_dot1;
-
-F1=m1*Velocity_Center_dot1;
-
-N1=Ic1*Omega_dot1+cross(Omega1,Ic1*Omega1);
-
-Omega2=R2'*Omega1+tetad2*z;
-
-Omega_dot2=R2'*Omega_dot1+cross(R2'*Omega1,tetad2*z)+tetadd2*z;
-
-Velocity_dot2=R2'*(cross(Omega_dot1,P2)+cross(Omega1,cross(Omega1,P2))+Velocity_dot1);
-
-Velocity_Center_dot2=cross(Omega_dot2,Pc2)+cross(Omega2,cross(Omega2,Pc2))+Velocity_dot2;
-
-F2=m2*Velocity_Center_dot2;
-
-N2=Ic2*Omega_dot2+cross(Omega2,Ic2*Omega2);
-
-f2=R3*f3+F2;
-
-n2=N2+R3*n3+cross(Pc2,F2)+cross(P3,R3*f3);
-
-T2=n2'*[0;0;1];
-
-f1=R2*f2+F1;
-
-n1=N1+R2*n2+cross(Pc1,F1)+cross(P2,R2*f2);
-
-T1=n1'*[0;0;1];
-
-FirstJT=T1;
-
-SecondJT=T2;
-
-T={T1 T2};
-
-M={0 0;0 0};
-
-G={0;0};
-
-V={0;0};
-
-tetadd={[0;0;tetadd1],[0;0;tetadd2]};
-
-for i=1:2
-
-for j=1:2
-
-        M{j,i}=vpa(diff(T{1,i},tetadd{1,j}(3,1)));
-
+arguments
+    theta   (2,1) {mustBeNumericOrSymVector}
+    thetaDot(2,1) {mustBeNumericOrSymVector}
+    thetaDDot(2,1) {mustBeNumericOrSymVector}
+    m       (2,1) {mustBeNumericOrSymVector}
+    P       (1,3) cell
+    Pc      (1,2) cell
+    Ic      (1,2) cell
+    g       (1,1) {mustBeNumericOrSym}
 end
 
-    G{i,1}=vpa(subs(T{1,i},[tetadd1 tetadd2 tetad1 tetad2],[0 0 0 0]));
+% Basic dimension checks for vectors and inertia tensors
+validateattributes(P{1},{'sym','double'},{'size',[3,1]},mfilename,'P1');
+validateattributes(P{2},{'sym','double'},{'size',[3,1]},mfilename,'P2');
+validateattributes(P{3},{'sym','double'},{'size',[3,1]},mfilename,'P3');
+validateattributes(Pc{1},{'sym','double'},{'size',[3,1]},mfilename,'Pc1');
+validateattributes(Pc{2},{'sym','double'},{'size',[3,1]},mfilename,'Pc2');
+validateattributes(Ic{1},{'sym','double'},{'size',[3,3]},mfilename,'Ic1');
+validateattributes(Ic{2},{'sym','double'},{'size',[3,3]},mfilename,'Ic2');
 
-    V{i,1}=vpa(subs(T{1,i},[tetadd1 tetadd2],[0 0])-G{i,1});
+% Ensure symbolic math for differentiation
+theta    = sym(theta,'real');
+thetaDot = sym(thetaDot,'real');
+thetaDDot= sym(thetaDDot,'real');
+m        = sym(m,'real');
+P        = cellfun(@(x) sym(x,'real'),P,'UniformOutput',false);
+Pc       = cellfun(@(x) sym(x,'real'),Pc,'UniformOutput',false);
+Ic       = cellfun(@(x) sym(x,'real'),Ic,'UniformOutput',false);
+g        = sym(g,'real');
 
+% Use symbolic zeros if any symbolic input is present
+zeroVal = sym(0);
+Omega0 = repmat(zeroVal,3,1);
+Omega_dot0 = repmat(zeroVal,3,1);
+Velocity_dot0 = [zeroVal; zeroVal; -g];
+f3 = repmat(zeroVal,3,1);
+n3 = repmat(zeroVal,3,1);
+
+% Rotation matrices
+R1 = [cos(theta(1)) -sin(theta(1)) 0; sin(theta(1)) cos(theta(1)) 0; 0 0 1];
+R2 = [cos(theta(2)) -sin(theta(2)) 0; sin(theta(2)) cos(theta(2)) 0; 0 0 1];
+R3 = eye(3);
+
+z = [0;0;1];
+
+% Outward recursion
+Omega1 = R1.'*Omega0 + thetaDot(1)*z;
+Omega_dot1 = R1.'*Omega_dot0 + cross(R1.'*Omega0,thetaDot(1)*z) + thetaDDot(1)*z;
+Velocity_dot1 = R1.'*(cross(Omega_dot0,P{1}) + cross(Omega0,cross(Omega0,P{1})) + Velocity_dot0);
+Velocity_Center_dot1 = cross(Omega_dot1,Pc{1}) + cross(Omega1,cross(Omega1,Pc{1})) + Velocity_dot1;
+F1 = m(1)*Velocity_Center_dot1;
+N1 = Ic{1}*Omega_dot1 + cross(Omega1,Ic{1}*Omega1);
+
+Omega2 = R2.'*Omega1 + thetaDot(2)*z;
+Omega_dot2 = R2.'*Omega_dot1 + cross(R2.'*Omega1,thetaDot(2)*z) + thetaDDot(2)*z;
+Velocity_dot2 = R2.'*(cross(Omega_dot1,P{2}) + cross(Omega1,cross(Omega1,P{2})) + Velocity_dot1);
+Velocity_Center_dot2 = cross(Omega_dot2,Pc{2}) + cross(Omega2,cross(Omega2,Pc{2})) + Velocity_dot2;
+F2 = m(2)*Velocity_Center_dot2;
+N2 = Ic{2}*Omega_dot2 + cross(Omega2,Ic{2}*Omega2);
+
+% Inward recursion
+f2 = R3*f3 + F2;
+n2 = N2 + R3*n3 + cross(Pc{2},F2) + cross(P{3},R3*f3);
+T2 = n2.'*z;
+
+f1 = R2*f2 + F1;
+n1 = N1 + R2*n2 + cross(Pc{1},F1) + cross(P{2},R2*f2);
+T1 = n1.'*z;
+
+T = {T1, T2};
+
+% Inertia, Coriolis/centrifugal, and gravity terms
+M = sym(zeros(2));
+G = sym(zeros(2,1));
+V = sym(zeros(2,1));
+
+for i = 1:2
+    for j = 1:2
+        M(j,i) = diff(T{i}, thetaDDot(j));
+    end
+    % gravity obtained by zeroing accelerations/velocities
+    G(i,1) = subs(T{i}, [thetaDDot.' thetaDot.'], zeros(1,4));
+    % Coriolis/centrifugal obtained by zeroing accelerations and subtracting gravity
+    V(i,1) = subs(T{i}, thetaDDot.', [0 0]) - G(i,1);
 end
 
-%% EndEffector Cartesian Position
+% Homogeneous transform and end-effector position (SCARA geometry)
+TM = [cos(theta(1)) -sin(theta(1)) 0 0; ...
+      sin(theta(1))  cos(theta(1)) 0 0; ...
+      0              0             1 0.298; ...
+      0              0             0 1] * ...
+     [cos(theta(2)) -sin(theta(2)) 0 0.4; ...
+      sin(theta(2))  cos(theta(2)) 0 0; ...
+      0              0             1 0; ...
+      0              0             0 1] * ...
+     [1 0 0 0.3; 0 1 0 0; 0 0 1 -0.053; 0 0 0 1];
 
-TM=[cos(teta1) -sin(teta1) 0 0;sin(teta1) cos(teta1) 0 0;0 0 1 0.298;0 0 0 1]*[cos(teta2) -sin(teta2) 0 0.4;sin(teta2) cos(teta2) 0 0;0 0 1 0;0 0 0 1]*[1 0 0 0.3;0 1 0 0;0 0 1 -0.053;0 0 0 1];
+EFFP_A = TM(1:3,4);
+end
 
-EFFP_A=[TM(1,4);TM(2,4);TM(3,4)];
+function mustBeNumericOrSym(x)
+% Custom validator to allow numeric or symbolic scalars.
+if ~(isnumeric(x) || isa(x,'sym'))
+    error('Value must be numeric or symbolic.');
+end
+end
+
+function mustBeNumericOrSymVector(x)
+% Validate numeric/symbolic column vectors of length 2.
+if ~(isnumeric(x) || isa(x,'sym')) || ~isvector(x) || numel(x) ~= 2
+    error('Value must be a 2-element numeric or symbolic vector.');
+end
+x = x(:); %#ok<NASGU> ensure column compatibility
+end
