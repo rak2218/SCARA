@@ -1,0 +1,52 @@
+function [M,V,G]= fcn(FJK,SJK)
+
+%% Inputs Parameters
+theta1=  FJK(1);
+theta2=  SJK(1);
+thetad1= FJK(2);
+thetad2= SJK(2);
+thetadd1= FJK(3);
+thetadd2= SJK(3);
+g=-9.80665;
+
+%% First Link Properties
+m1=7.204;
+Pc1=[0.128;0.000;0.019];Pc11=0.128;Pc12=0.000;Pc13=0.019;
+Ic1=[0.018 0.000 0.007;0.000 0.162 0.000;0.007 0.000 0.000];
+Ic11_1=0.018;Ic11_2=0.000;Ic11_3=0.007;
+Ic12_1=0.000;Ic12_2=0.162;Ic12_3=0.000;
+Ic13_1=0.007;Ic13_2=0.000;Ic13_3=0.000;
+P1=[0;0;0.298];P11=0.000;P12=0.000;P13=0.298;
+
+%% Second Link Properties
+m2=4.936;
+Pc2=[0.133;0.000;0.205];Pc21=0.133;Pc22=0.000;Pc23=0.205;
+Ic2=[0.078 0.000 0.005;0.000 0.132 0.000;0.005 0.000 0.061];
+Ic21_1=0.078;Ic21_2=0.000;Ic21_3=0.005;
+Ic22_1=0.000;Ic22_2=0.132;Ic22_3=0.000;
+Ic23_1=0.005;Ic23_2=0.000;Ic23_3=0.061;
+P2=[0.4;0;0];P21=0.4;P22=0;P23=0;
+
+%% Inertia Matrix [M]
+M11=m2*P21^2 + 2*m2*cos(theta2)*P21*Pc21 + 2*m2*sin(theta2)*P21*Pc23 + m2*P23^2 - 2*m2*sin(theta2)*P23*Pc21 + 2*m2*cos(theta2)*P23*Pc23 + m1*Pc11^2 + m1*Pc13^2 + m2*Pc21^2 + m2*Pc23^2 + Ic12_2 + Ic22_2;
+M12=Ic22_2 + Pc21*m2*(Pc21 + P21*cos(theta2) - P23*sin(theta2)) + Pc23*m2*(Pc23 + P23*cos(theta2) + P21*sin(theta2));
+M21=Ic22_2 + P21*(Pc23*m2*sin(theta2) + Pc21*m2*cos(theta2)) - P23*(Pc21*m2*sin(theta2) - Pc23*m2*cos(theta2)) + Pc21^2*m2 + Pc23^2*m2;
+M22=m2*Pc21^2 + m2*Pc23^2 + Ic22_2;
+
+M=[M11 M12;M21 M22];
+
+%% Coriolis and Centrifugal Vector [V]
+
+V11=-m2*thetad2*(2*thetad1 + thetad2)*(P23*Pc21*cos(theta2) - P21*Pc23*cos(theta2) + P21*Pc21*sin(theta2) + P23*Pc23*sin(theta2));
+V21=m2*thetad1^2*(P23*Pc21*cos(theta2) - P21*Pc23*cos(theta2) + P21*Pc21*sin(theta2) + P23*Pc23*sin(theta2));
+
+V=[V11;V21];
+
+%% Gravity Vector [G]
+
+G11=g*(P23*m2*sin(theta1) + Pc13*m1*sin(theta1) + Pc21*m2*cos(theta1 + theta2) + Pc23*m2*sin(theta1 + theta2) + P21*m2*cos(theta1) + Pc11*m1*cos(theta1));
+G21=g*m2*(Pc21*cos(theta1 + theta2) + Pc23*sin(theta1 + theta2));
+
+G=[G11;G21];
+
+end
